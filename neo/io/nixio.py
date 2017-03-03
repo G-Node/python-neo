@@ -763,15 +763,18 @@ class NixIO(BaseIO):
             das = [da for dalist in das for da in dalist]
             for da in das:
                 if rcgsource not in da.sources:
-                    da.sources.append(rcgsource)
+                    # da.sources.append(rcgsource)
+                    da._add_source_obj(rcgsource)
             for unit in rcg.units:
                 unitsource = self._get_mapped_object(unit)
                 for st in unit.spiketrains:
                     stmtag = self._get_mapped_object(st)
                     if rcgsource not in stmtag.sources:
-                        stmtag.sources.append(rcgsource)
+                        # stmtag.sources.append(rcgsource)
+                        stmtag._add_source_obj(rcgsource)
                     if unitsource not in stmtag.sources:
-                        stmtag.sources.append(unitsource)
+                        # stmtag.sources.append(unitsource)
+                        stmtag._add_source_obj(unitsource)
 
     def _get_or_init_metadata(self, nix_obj, path):
         """
