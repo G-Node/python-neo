@@ -569,7 +569,7 @@ class NixIO(BaseIO):
                 nixobj.append(da)
             # parentobj.data_arrays.extend(nixobj)
             for obj in nixobj:
-                parentobj.data_arrays._add_data_array_obj(obj)
+                parentobj._add_data_array_obj(obj)
         elif attr["type"] in ("epoch", "event", "spiketrain"):
             blockpath = "/" + loc.split("/")[1]
             parentblock = self._get_object_at(blockpath)
@@ -581,7 +581,7 @@ class NixIO(BaseIO):
                 attr["name"], "neo."+attr["type"], timesda
             )
             # parentobj.multi_tags.append(nixobj)
-            parentobj.multi_tags._add_multi_tag_obj(nixobj)
+            parentobj._add_multi_tag_obj(nixobj)
         elif attr["type"] == "unit":
             nixobj = parentobj.create_source(attr["name"], "neo.unit")
         else:
