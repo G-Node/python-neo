@@ -567,7 +567,9 @@ class NixIO(BaseIO):
                 da = parentblock.create_data_array(name, typestr, data=datarow)
                 da.metadata = sigmd
                 nixobj.append(da)
-            parentobj.data_arrays.extend(nixobj)
+            # parentobj.data_arrays.extend(nixobj)
+            for obj in nixobj:
+                parentobj.data_arrays._add_data_array_obj(obj)
         elif attr["type"] in ("epoch", "event", "spiketrain"):
             blockpath = "/" + loc.split("/")[1]
             parentblock = self._get_object_at(blockpath)
