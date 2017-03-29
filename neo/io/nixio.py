@@ -58,6 +58,20 @@ def calculate_timestamp(dt):
     return int(dt)
 
 
+# keep a running tally of each (neo) object type for name conflict resolution
+object_counts = {
+    "block": 0,
+    "segment": 0,
+    "analogsignal": 0,
+    "irregularlysampledsignal": 0,
+    "spiketrain": 0,
+    "event": 0,
+    "epoch": 0,
+    "channelindex": 0,
+    "unit": 0,
+}
+
+
 class NixIO(BaseIO):
     """
     Class for reading and writing NIX files.
@@ -506,21 +520,26 @@ class NixIO(BaseIO):
         :param neo_blocks: List (or iterable) containing Neo blocks
         :return: A list containing the new NIX Blocks
         """
-        self.resolve_name_conflicts(neo_blocks)
+        # self.resolve_name_conflicts(neo_blocks)
         for bl in neo_blocks:
             self.write_block(bl)
 
     def _write_object(self, obj, loc=""):
+        objtype = type(obj).__name__.lower()
         if isinstance(obj, Block):
             containerstr = "/"
         else:
-            objtype = type(obj).__name__.lower()
             if objtype == "channelindex":
                 containerstr = "/channel_indexes/"
             else:
                 containerstr = "/" + type(obj).__name__.lower() + "s/"
-        self.resolve_name_conflicts(obj)
-        objpath = loc + containerstr + obj.name
+        # self.resolve_name_conflicts(obj)
+        name = obj.name
+        if name is None or name == "":
+            name = "neo.{}-{}".format(objtype, object_counts[objtype])
+        object_counts[objtype] += 1
+
+        objpath = loc + containerstr + name
         oldhash = self._object_hashes.get(objpath)
         if oldhash is None:
             try:
@@ -531,6 +550,7 @@ class NixIO(BaseIO):
         newhash = self._hash_object(obj)
         if oldhash != newhash:
             attr = self._neo_attr_to_nix(obj)
+            attr["name"] = name
             if isinstance(obj, pq.Quantity):
                 attr.update(self._neo_data_to_nix(obj))
             if oldhash is None:
