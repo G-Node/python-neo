@@ -535,7 +535,7 @@ class NixIO(BaseIO):
                 containerstr = "/" + type(obj).__name__.lower() + "s/"
         # self.resolve_name_conflicts(obj)
         name = obj.name
-        if name is None or name == "":
+        if not name:
             name = "neo.{}-{}".format(objtype, object_counts[objtype])
         object_counts[objtype] += 1
 
