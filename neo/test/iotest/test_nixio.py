@@ -54,7 +54,10 @@ class NixIOTest(unittest.TestCase):
             self.compare_attr(neoblock, nixblock)
             self.assertEqual(len(neoblock.segments), len(nixblock.groups))
             for idx, neoseg in enumerate(neoblock.segments):
-                nixgrp = nixblock.groups[neoseg.name]
+                if neoseg.name:
+                    nixgrp = nixblock.groups[neoseg.name]
+                else:
+                    nixgrp = nixblock.groups[idx]
                 self.compare_segment_group(neoseg, nixgrp)
             for idx, neochx in enumerate(neoblock.channel_indexes):
                 if neochx.name:
