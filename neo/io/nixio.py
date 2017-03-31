@@ -994,8 +994,7 @@ class NixIO(BaseIO):
         else:
             return None
 
-    @classmethod
-    def resolve_name_conflicts(cls, objects):
+    def resolve_name_conflicts(self, objects):
         """
         Given a list of neo objects, change their names such that no two
         objects share the same name. Objects with no name are renamed based on
@@ -1005,13 +1004,16 @@ class NixIO(BaseIO):
 
         :param objects: List of Neo objects or Neo container object
         """
+        self.logger.warn("WARNING: Using deprecated (and very inefficient) "
+                         "name conflict resolution function"
+                         " `resolve_name_conflict`")
         if isinstance(objects, list):
             if not len(objects):
                 return
             names = [obj.name for obj in objects]
             for idx, cn in enumerate(names):
                 if not cn:
-                    cn = cls._generate_name(objects[idx])
+                    cn = self._generate_name(objects[idx])
                 else:
                     names[idx] = ""
                 if cn not in names:
@@ -1027,11 +1029,11 @@ class NixIO(BaseIO):
                 obj.name = n
             return
         if not objects.name:
-            objects.name = cls._generate_name(objects)
+            objects.name = self._generate_name(objects)
         if isinstance(objects, Block):
             block = objects
             allchildren = block.segments + block.channel_indexes
-            cls.resolve_name_conflicts(allchildren)
+            self.resolve_name_conflicts(allchildren)
             allchildren = list()
             for seg in block.segments:
                 allchildren.extend(seg.analogsignals +
@@ -1039,17 +1041,17 @@ class NixIO(BaseIO):
                                    seg.events +
                                    seg.epochs +
                                    seg.spiketrains)
-            cls.resolve_name_conflicts(allchildren)
+            self.resolve_name_conflicts(allchildren)
         elif isinstance(objects, Segment):
             seg = objects
-            cls.resolve_name_conflicts(seg.analogsignals +
-                                       seg.irregularlysampledsignals +
-                                       seg.events +
-                                       seg.epochs +
-                                       seg.spiketrains)
+            self.resolve_name_conflicts(seg.analogsignals +
+                                        seg.irregularlysampledsignals +
+                                        seg.events +
+                                        seg.epochs +
+                                        seg.spiketrains)
         elif isinstance(objects, ChannelIndex):
             rcg = objects
-            cls.resolve_name_conflicts(rcg.units)
+            self.resolve_name_conflicts(rcg.units)
 
     @staticmethod
     def _generate_name(neoobj):
