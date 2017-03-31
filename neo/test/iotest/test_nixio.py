@@ -88,8 +88,11 @@ class NixIOTest(unittest.TestCase):
         nix_units = list(src for src in nixsrc.sources
                          if src.type == "neo.unit")
         self.assertEqual(len(neochx.units), len(nix_units))
-        for neounit in neochx.units:
-            nixunit = nixsrc.sources[neounit.name]
+        for idx, neounit in enumerate(neochx.units):
+            if neounit.name:
+                nixunit = nixsrc.sources[neounit.name]
+            else:
+                nixunit = nixsrc.sources[idx]
             self.compare_attr(neounit, nixunit)
 
     def check_refs(self, neoblock, nixblock):
@@ -164,6 +167,9 @@ class NixIOTest(unittest.TestCase):
             if self.io._find_lazy_loaded(sig) is not None:
                 sig = self.io.load_lazy_object(sig)
             dalist = list()
+            if not sig.name:
+                # can't do much without a name, skip this one
+                continue
             for idx in itertools.count():
                 nixname = "{}.{}".format(sig.name, idx)
                 if nixname in data_arrays:
@@ -210,10 +216,13 @@ class NixIOTest(unittest.TestCase):
 
     def compare_eests_mtags(self, eestlist, mtaglist):
         self.assertEqual(len(eestlist), len(mtaglist))
-        for eest in eestlist:
+        for idx, eest in enumerate(eestlist):
             if self.io._find_lazy_loaded(eest) is not None:
                 eest = self.io.load_lazy_object(eest)
-            mtag = mtaglist[eest.name]
+            if eest.name:
+                mtag = mtaglist[eest.name]
+            else:
+                mtag = mtaglist[idx]
             if isinstance(eest, Epoch):
                 self.compare_epoch_mtag(eest, mtag)
             elif isinstance(eest, Event):
