@@ -570,18 +570,30 @@ class NixIO(BaseIO):
         parentobj = self._get_object_at(loc)
         if attr["type"] == "block":
             nixobj = parentobj.create_block(attr["name"], "neo.block")
+            nixobj.metadata = self.nix_file.create_section(
+                attr["name"], "neo.block.metadata"
+            )
         elif attr["type"] == "segment":
             nixobj = parentobj.create_group(attr["name"], "neo.segment")
+            nixobj.metadata = parentobj.metadata.create_section(
+                attr["name"], "neo.segment.metadata"
+            )
         elif attr["type"] == "channelindex":
             nixobj = parentobj.create_source(attr["name"],
                                              "neo.channelindex")
+            nixobj.metadata = parentobj.metadata.create_section(
+                attr["name"], "neo.channelindex.metadata"
+            )
         elif attr["type"] in ("analogsignal", "irregularlysampledsignal"):
             blockpath = "/" + loc.split("/")[1]
             parentblock = self._get_object_at(blockpath)
             nixobj = list()
             typestr = "neo." + attr["type"]
-            parentmd = self._get_or_init_metadata(parentobj, loc)
-            sigmd = parentmd.create_section(attr["name"], typestr+".metadata")
+            # sigmd = parentmd.create_section(attr["name"],
+            #                                 typestr+".metadata")
+            sigmd = parentobj.metadata.create_section(
+                attr["name"], "{}.metadata".format(typestr)
+            )
             for idx, datarow in enumerate(attr["data"]):
                 name = "{}.{}".format(attr["name"], idx)
                 da = parentblock.create_data_array(name, typestr, data=datarow)
@@ -593,17 +605,24 @@ class NixIO(BaseIO):
         elif attr["type"] in ("epoch", "event", "spiketrain"):
             blockpath = "/" + loc.split("/")[1]
             parentblock = self._get_object_at(blockpath)
+            typestr = "neo.{}".format(attr["type"])
             timesda = parentblock.create_data_array(
-                attr["name"]+".times", "neo."+attr["type"]+".times",
+                attr["name"]+".times", "{}.times".format(typestr),
                 data=attr["data"]
             )
             nixobj = parentblock.create_multi_tag(
-                attr["name"], "neo."+attr["type"], timesda
+                attr["name"], typestr, timesda
             )
             # parentobj.multi_tags.append(nixobj)
+            nixobj.metadata = parentobj.metadata.create_section(
+                attr["name"], "{}.metadata".format(typestr)
+            )
             parentobj._add_multi_tag_obj(nixobj)
         elif attr["type"] == "unit":
             nixobj = parentobj.create_source(attr["name"], "neo.unit")
+            nixobj.metadata = parentobj.metadata.create_section(
+                attr["name"], "neo.unit.metadata"
+            )
         else:
             raise ValueError("Unable to create NIX object. Invalid type.")
         return nixobj
@@ -658,9 +677,11 @@ class NixIO(BaseIO):
             else:
                 nixchan = nixsource.create_source(channame,
                                                   "neo.channelindex")
+                nixchan.metadata = nixsource.metadata.create_section(
+                    nixchan.name, "neo.channelindex.metadata"
+                )
             nixchan.definition = nixsource.definition
-            chanpath = loc + "/channelindex/" + channame
-            chanmd = self._get_or_init_metadata(nixchan, chanpath)
+            chanmd = nixchan.metadata
             chanmd["index"] = nix.Value(int(channel))
             if chx.coordinates is not None:
                 coords = chx.coordinates[idx]
@@ -799,29 +820,6 @@ class NixIO(BaseIO):
                         # stmtag.sources.append(unitsource)
                         stmtag._add_source_obj(unitsource)
 
-    def _get_or_init_metadata(self, nix_obj, path):
-        """
-        Creates a metadata Section for the provided NIX object if it doesn't
-        have one already. Returns the new or existing metadata section.
-
-        :param nix_obj: The object to which the Section is attached
-        :param path: Path to nix_obj
-        :return: The metadata section of the provided object
-        """
-        parent_parts = path.split("/")[:-2]
-        parent_path = "/".join(parent_parts)
-        if nix_obj.metadata is None:
-            if len(parent_parts) == 0:  # nix_obj is root block
-                parent_metadata = self.nix_file
-            else:
-                obj_parent = self._get_object_at(parent_path)
-                parent_metadata = self._get_or_init_metadata(obj_parent,
-                                                             parent_path)
-            nix_obj.metadata = parent_metadata.create_section(
-                    nix_obj.name, nix_obj.type+".metadata"
-            )
-        return nix_obj.metadata
-
     def _get_object_at(self, path):
         """
         Returns the object at the location defined by the path.
@@ -886,33 +884,32 @@ class NixIO(BaseIO):
 
     def _write_attr_annotations(self, nixobj, attr, path):
         if isinstance(nixobj, list):
+            metadata = nixobj[0].metadata
             for obj in nixobj:
                 obj.definition = attr["definition"]
             self._write_attr_annotations(nixobj[0], attr, path)
             return
         else:
+            metadata = nixobj.metadata
             nixobj.definition = attr["definition"]
         if "created_at" in attr:
             nixobj.force_created_at(calculate_timestamp(attr["created_at"]))
         if "file_datetime" in attr:
-            metadata = self._get_or_init_metadata(nixobj, path)
             self._write_property(metadata,
                                  "file_datetime", attr["file_datetime"])
             # metadata["file_datetime"] = attr["file_datetime"]
         if "rec_datetime" in attr and attr["rec_datetime"]:
-            metadata = self._get_or_init_metadata(nixobj, path)
             # metadata["rec_datetime"] = attr["rec_datetime"]
             self._write_property(metadata,
                                  "rec_datetime", attr["rec_datetime"])
 
         if "annotations" in attr:
-            metadata = self._get_or_init_metadata(nixobj, path)
             for k, v in attr["annotations"].items():
                 self._write_property(metadata, k, v)
 
     def _write_data(self, nixobj, attr, path):
         if isinstance(nixobj, list):
-            metadata = self._get_or_init_metadata(nixobj[0], path)
+            metadata = nixobj[0].metadata
             metadata["t_start.units"] = nix.Value(attr["t_start.units"])
             for obj in nixobj:
                 obj.unit = attr["data.units"]
@@ -927,6 +924,7 @@ class NixIO(BaseIO):
                 timedim.label = "time"
                 timedim.offset = attr["t_start"]
         else:
+            metadata = nixobj.metadata
             nixobj.positions.unit = attr["data.units"]
             blockpath = "/" + path.split("/")[1]
             parentblock = self._get_object_at(blockpath)
@@ -945,7 +943,6 @@ class NixIO(BaseIO):
             if "labels" in attr:
                 labeldim = nixobj.positions.append_set_dimension()
                 labeldim.labels = attr["labels"]
-            metadata = self._get_or_init_metadata(nixobj, path)
             if "t_start" in attr:
                 self._write_property(metadata, "t_start", attr["t_start"])
             if "t_stop" in attr:
@@ -953,11 +950,15 @@ class NixIO(BaseIO):
             if "waveforms" in attr:
                 wfname = nixobj.name + ".waveforms"
                 if wfname in parentblock.data_arrays:
+                    del metadata.sections[wfname]
                     del parentblock.data_arrays[wfname]
                     del nixobj.features[0]
                 wfda = parentblock.create_data_array(
                     wfname, "neo.waveforms",
                     data=attr["waveforms"]
+                )
+                wfda.metadata = nixobj.metadata.create_section(
+                    wfda.name, "neo.waveforms.metadata"
                 )
                 wfda.unit = attr["waveforms.units"]
                 nixobj.create_feature(wfda, nix.LinkType.Indexed)
@@ -970,11 +971,6 @@ class NixIO(BaseIO):
                     attr["sampling_interval.units"]
                 wftime.unit = attr["times.units"]
                 wftime.label = "time"
-                if wfname in metadata.sections:
-                    wfda.metadata = metadata.sections[wfname]
-                else:
-                    wfpath = path + "/waveforms/" + wfname
-                    wfda.metadata = self._get_or_init_metadata(wfda, wfpath)
                 if "left_sweep" in attr:
                     self._write_property(wfda.metadata, "left_sweep",
                                          attr["left_sweep"])
