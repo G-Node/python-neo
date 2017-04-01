@@ -58,20 +58,6 @@ def calculate_timestamp(dt):
     return int(dt)
 
 
-# keep a running tally of each (neo) object type for name conflict resolution
-object_counts = {
-    "block": 0,
-    "segment": 0,
-    "analogsignal": 0,
-    "irregularlysampledsignal": 0,
-    "spiketrain": 0,
-    "event": 0,
-    "epoch": 0,
-    "channelindex": 0,
-    "unit": 0,
-}
-
-
 class NixIO(BaseIO):
     """
     Class for reading and writing NIX files.
@@ -130,6 +116,19 @@ class NixIO(BaseIO):
         self._lazy_loaded = list()
         self._object_hashes = dict()
         self._block_read_counter = 0
+        # keep a running count of each (neo) object type
+        # for name conflict resolution
+        self._object_counts = {
+            "block": 0,
+            "segment": 0,
+            "analogsignal": 0,
+            "irregularlysampledsignal": 0,
+            "spiketrain": 0,
+            "event": 0,
+            "epoch": 0,
+            "channelindex": 0,
+            "unit": 0,
+        }
 
     def __enter__(self):
         return self
@@ -536,8 +535,8 @@ class NixIO(BaseIO):
         # self.resolve_name_conflicts(obj)
         name = obj.name
         if not name:
-            name = "neo.{}-{}".format(objtype, object_counts[objtype])
-        object_counts[objtype] += 1
+            name = "neo.{}-{}".format(objtype, self._object_counts[objtype])
+        self._object_counts[objtype] += 1
 
         objpath = loc + containerstr + name
         oldhash = self._object_hashes.get(objpath)
