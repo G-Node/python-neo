@@ -116,6 +116,7 @@ class NixIO(BaseIO):
         self._lazy_loaded = list()
         self._object_hashes = dict()
         self._block_read_counter = 0
+        self._path_map = dict()
         # keep a running count of each (neo) object type
         # for name conflict resolution
         self._object_counts = {
@@ -830,6 +831,8 @@ class NixIO(BaseIO):
         :param path: Path string
         :return: The object at the location defined by the path
         """
+        if path in self._path_map:
+            return self._path_map[path]
         if path in ("", "/"):
             return self.nix_file
         parts = path.split("/")
@@ -851,6 +854,7 @@ class NixIO(BaseIO):
                     break
         else:
             obj = parent_container[objname]
+        self._path_map[path] = obj
         return obj
 
     def _get_parent(self, path):
