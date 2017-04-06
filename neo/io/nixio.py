@@ -59,7 +59,10 @@ def calculate_timestamp(dt):
 
 
 def valid_name(name):
-    return nix.pycore.util.names.check(name)
+    if name:
+        return nix.pycore.util.names.check(name)
+    else:
+        return True
 
 
 class NixIO(BaseIO):

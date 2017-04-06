@@ -869,6 +869,18 @@ class NixIOWriteTest(NixIOTest):
         writeprop(section, "val", val)
         self.assertEqual(val, section["val"])
 
+    def test_bad_object_name(self):
+        block = Block(name="name/with/slashes",
+                      description="whatever")
+        seg = Segment(name="segname/withslashes",
+                      description="whateveragain")
+        block.segments.append(seg)
+        self.assertRaises(ValueError, self.writer.write_block, block)
+        block.name = "no_slashes"
+        self.assertRaises(ValueError, self.writer.write_block, block)
+        seg.name = "no_slashes"
+        self.writer.write_block(block)
+
 
 class NixIOReadTest(NixIOTest):
 
