@@ -520,7 +520,6 @@ class NixIO(BaseIO):
         :param neo_blocks: List (or iterable) containing Neo blocks
         :return: A list containing the new NIX Blocks
         """
-        # self.resolve_name_conflicts(neo_blocks)
         for bl in neo_blocks:
             self.write_block(bl)
 
@@ -533,7 +532,6 @@ class NixIO(BaseIO):
                 containerstr = "/channel_indexes/"
             else:
                 containerstr = "/" + type(obj).__name__.lower() + "s/"
-        # self.resolve_name_conflicts(obj)
         name = obj.name
         if not name:
             name = "neo.{}-{}".format(objtype, self._object_counts[objtype])
@@ -994,65 +992,6 @@ class NixIO(BaseIO):
                 return idx
         else:
             return None
-
-    def resolve_name_conflicts(self, objects):
-        """
-        Given a list of neo objects, change their names such that no two
-        objects share the same name. Objects with no name are renamed based on
-        their type.
-        If a container object is supplied (Block, Segment, or RCG), conflicts
-        are resolved for the child objects.
-
-        :param objects: List of Neo objects or Neo container object
-        """
-        self.logger.warn("WARNING: Using deprecated (and very inefficient) "
-                         "name conflict resolution function"
-                         " `resolve_name_conflict`")
-        if isinstance(objects, list):
-            if not len(objects):
-                return
-            names = [obj.name for obj in objects]
-            for idx, cn in enumerate(names):
-                if not cn:
-                    cn = self._generate_name(objects[idx])
-                else:
-                    names[idx] = ""
-                if cn not in names:
-                    newname = cn
-                else:
-                    suffix = 1
-                    newname = "{}-{}".format(cn, suffix)
-                    while newname in names:
-                        suffix += 1
-                        newname = "{}-{}".format(cn, suffix)
-                names[idx] = newname
-            for obj, n in zip(objects, names):
-                obj.name = n
-            return
-        if not objects.name:
-            objects.name = self._generate_name(objects)
-        if isinstance(objects, Block):
-            block = objects
-            allchildren = block.segments + block.channel_indexes
-            self.resolve_name_conflicts(allchildren)
-            allchildren = list()
-            for seg in block.segments:
-                allchildren.extend(seg.analogsignals +
-                                   seg.irregularlysampledsignals +
-                                   seg.events +
-                                   seg.epochs +
-                                   seg.spiketrains)
-            self.resolve_name_conflicts(allchildren)
-        elif isinstance(objects, Segment):
-            seg = objects
-            self.resolve_name_conflicts(seg.analogsignals +
-                                        seg.irregularlysampledsignals +
-                                        seg.events +
-                                        seg.epochs +
-                                        seg.spiketrains)
-        elif isinstance(objects, ChannelIndex):
-            rcg = objects
-            self.resolve_name_conflicts(rcg.units)
 
     @staticmethod
     def _generate_name(neoobj):
