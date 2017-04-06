@@ -58,6 +58,10 @@ def calculate_timestamp(dt):
     return int(dt)
 
 
+def valid_name(name):
+    return nix.pycore.util.names.check(name)
+
+
 class NixIO(BaseIO):
     """
     Class for reading and writing NIX files.
@@ -533,6 +537,8 @@ class NixIO(BaseIO):
             else:
                 containerstr = "/" + type(obj).__name__.lower() + "s/"
         name = obj.name
+        if not valid_name(name):
+            raise ValueError("Invalid object name '{}'".format(name))
         if not name:
             name = "neo.{}-{}".format(objtype, self._object_counts[objtype])
         self._object_counts[objtype] += 1
