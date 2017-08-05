@@ -940,7 +940,7 @@ class NixIO(BaseIO):
             nixobj.positions.unit = attr["data.units"]
             blockpath = "/" + path.split("/")[1]
             parentblock = self._get_object_at(blockpath)
-            if "extents" in attr:
+            if "durations" in attr:
                 extname = nixobj.name + ".durations"
                 exttype = nixobj.type + ".durations"
                 if extname in parentblock.data_arrays:
@@ -948,19 +948,22 @@ class NixIO(BaseIO):
                 extents = parentblock.create_data_array(
                     extname,
                     exttype,
-                    data=attr["extents"]
+                    data=attr["durations"]
                 )
-                extents.unit = attr["extents.units"]
+                extents.unit = attr["durations.dim"]
+                extents.polynom_coefficients = (0.0, attr["durations.scaling"])
                 nixobj.extents = extents
             if "labels" in attr:
                 labeldim = nixobj.positions.append_set_dimension()
                 labeldim.labels = attr["labels"]
             if "t_start" in attr:
                 metadata["t_start"] = nix.Value(attr["t_start"])
-                metadata["t_start.units"] = nix.Value(attr["t_start.units"])
+                metadata["t_start.dim"] = nix.Value(attr["t_start.dim"])
+                metadata["t_start.scaling"] = nix.Value(attr["t_start.scaling"])
             if "t_stop" in attr:
                 metadata["t_stop"] = nix.Value(attr["t_stop"])
-                metadata["t_stop.units"] = nix.Value(attr["t_stop.units"])
+                metadata["t_stop.dim"] = nix.Value(attr["t_stop.dim"])
+                metadata["t_stop.scaling"] = nix.Value(attr["t_stop.scaling"])
             if "waveforms" in attr:
                 wfname = nixobj.name + ".waveforms"
                 if wfname in parentblock.data_arrays:
@@ -974,20 +977,23 @@ class NixIO(BaseIO):
                 wfda.metadata = nixobj.metadata.create_section(
                     wfda.name, "neo.waveforms.metadata"
                 )
-                wfda.unit = attr["waveforms.units"]
+                wfda.unit = attr["waveforms.dim"]
+                wfda.polynom_coefficients = (0.0, attr["waveforms.scaling"])
                 nixobj.create_feature(wfda, nix.LinkType.Indexed)
                 wfda.append_set_dimension()
                 wfda.append_set_dimension()
                 wftime = wfda.append_sampled_dimension(
-                    attr["sampling_interval"]
+                    attr["sampling_period"]
                 )
-                metadata["sampling_interval.units"] =\
-                    attr["sampling_interval.units"]
-                wftime.unit = attr["times.units"]
+                wftime.units = attr["sampling_period.dim"]
                 wftime.label = "time"
                 if "left_sweep" in attr:
                     self._write_property(wfda.metadata, "left_sweep",
                                          attr["left_sweep"])
+                    self._write_property(wfda.metadata, "left_sweep.dim",
+                                         attr["left_sweep.dim"])
+                    self._write_property(wfda.metadata, "left_sweep.scaling",
+                                         attr["left_sweep.scaling"])
 
     def _update_maps(self, obj, lazy):
         objidx = self._find_lazy_loaded(obj)
