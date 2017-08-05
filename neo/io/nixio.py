@@ -53,6 +53,14 @@ def stringify(value):
     return str(value)
 
 
+def convert_units(scaledunit):
+    scaledunit = pq.CompoundUnit(scaledunit)
+    simple = scaledunit.simplified
+    dim = str(simple.dimensionality)
+    scaling = simple.magnitude
+    return scaling, dim
+
+
 def calculate_timestamp(dt):
     if isinstance(dt, datetime):
         return int(time.mktime(dt.timetuple()))
@@ -305,6 +313,10 @@ class NixIO(BaseIO):
         neo_attrs["nix_name"] = metadata.name  # use the common base name
 
         unit = nix_da_group[0].unit
+        coeff = nix_da_group[0].polynom_coefficients
+        if coeff is not None:
+            unit = pq.CompoundUnit("{} * {}".format(coeff[1], unit))
+
         if lazy:
             signaldata = pq.Quantity(np.empty(0), unit)
             lazy_shape = (len(nix_da_group[0]), len(nix_da_group))
@@ -910,7 +922,10 @@ class NixIO(BaseIO):
             metadata = nixobj[0].metadata
             metadata["t_start.units"] = nix.Value(attr["t_start.units"])
             for obj in nixobj:
-                obj.unit = attr["data.units"]
+                if "data.units" in attr:
+                    scaling, dim = convert_units(attr["data.units"])
+                    obj.unit = dim
+                    obj.polynom_coefficients = (0.0, scaling)
                 if attr["type"] == "analogsignal":
                     timedim = obj.append_sampled_dimension(
                         attr["sampling_interval"]
