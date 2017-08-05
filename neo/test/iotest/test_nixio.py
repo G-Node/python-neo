@@ -8,7 +8,7 @@
 # modification, are permitted under the terms of the BSD License. See
 # LICENSE file in the root of the Project.
 """
-Tests for neo.io.nixio
+Tests for NixIO
 """
 
 import os
@@ -28,15 +28,13 @@ import quantities as pq
 from neo.core import (Block, Segment, ChannelIndex, AnalogSignal,
                       IrregularlySampledSignal, Unit, SpikeTrain, Event, Epoch)
 from neo.test.iotest.common_io_test import BaseTestIO
+from neo.io.nixio import NixIO, string_types
 
 try:
     import nixio as nix
     HAVE_NIX = True
 except ImportError:
     HAVE_NIX = False
-
-from neo.io.nixio import NixIO
-from neo.io.nixio import string_types
 
 
 @unittest.skipUnless(HAVE_NIX, "Requires NIX")
@@ -189,8 +187,6 @@ class NixIOTest(unittest.TestCase):
             np.testing.assert_almost_equal(sig.magnitude, da)
             coeff = da.polynom_coefficients
             nixunit = da.unit
-            if nixunit is None:
-                print("Data Array with name {} has None unit".format(da.name))
             if coeff:
                 nixunit = pq.CompoundUnit("{} * {}".format(coeff[1], nixunit))
             self.assertEqual(pq.CompoundUnit(neounit), nixunit)
@@ -198,12 +194,6 @@ class NixIOTest(unittest.TestCase):
             if isinstance(neosig, AnalogSignal):
                 self.assertEqual(timedim.dimension_type,
                                  nix.DimensionType.Sample)
-                print("Analog signal time dim")
-                print("Neo sampling period: ", neosig.sampling_period)
-                print("Neo sampling rate: ", neosig.sampling_rate)
-                print("Nix interval: ", timedim.sampling_interval)
-                print("Nix unit: ", timedim.unit)
-                print("---")
                 self.assertEqual(
                     pq.Quantity(timedim.sampling_interval, timedim.unit),
                     neosig.sampling_period
@@ -306,9 +296,16 @@ class NixIOTest(unittest.TestCase):
                 if k == "nix_name":
                     continue
                 if isinstance(v, pq.Quantity):
-                    self.assertEqual(nixmd.props[str(k)].unit,
-                                     str(v.dimensionality))
-                    np.testing.assert_almost_equal(nixmd[str(k)],
+                    kscaling = "{}.scaling".format(k)
+                    scaling = 1.0
+                    nixunit = nixmd.props[str(k)].unit
+                    if kscaling in nixmd:
+                        scaling = nixmd[kscaling]
+                        nixunit = pq.CompoundUnit("{} * {}".format(
+                            scaling, nixunit
+                        ))
+                    self.assertEqual(nixunit, str(v.dimensionality))
+                    np.testing.assert_almost_equal(scaling * nixmd[str(k)],
                                                    v.magnitude)
                 else:
                     self.assertEqual(nixmd[str(k)], v)
@@ -762,6 +759,7 @@ class NixIOWriteTest(NixIOTest):
         )
         self.write_and_compare([block, anotherblock])
 
+        t_stop = 3 * pq.CompoundUnit("10 * years")
         block.segments[0].irregularlysampledsignals.append(
             IrregularlySampledSignal(times=np.random.random(10),
                                      signal=np.random.random((10, 3)),
@@ -769,7 +767,7 @@ class NixIOWriteTest(NixIOTest):
                                      dtype=np.float,
                                      name="some sort of signal",
                                      description="the signal is described",
-                                     t_stop=pq.CompoundUnit("10 * years"))
+                                     t_stop=t_stop)
         )
         self.write_and_compare([block, anotherblock])
 
