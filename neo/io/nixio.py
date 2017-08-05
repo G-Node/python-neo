@@ -54,7 +54,6 @@ def stringify(value):
 
 
 def convert_units(scaledunit):
-    scaledunit = pq.CompoundUnit(scaledunit)
     simple = scaledunit.simplified
     dim = str(simple.dimensionality)
     scaling = simple.magnitude
@@ -920,20 +919,20 @@ class NixIO(BaseIO):
     def _write_data(self, nixobj, attr, path):
         if isinstance(nixobj, list):
             metadata = nixobj[0].metadata
-            metadata["t_start.units"] = nix.Value(attr["t_start.units"])
             for obj in nixobj:
                 if "data.units" in attr:
-                    scaling, dim = convert_units(attr["data.units"])
+                    scaling = attr["data.scaling"]
+                    dim = attr["data.dim"]
                     obj.unit = dim
                     obj.polynom_coefficients = (0.0, scaling)
                 if attr["type"] == "analogsignal":
                     timedim = obj.append_sampled_dimension(
-                        attr["sampling_interval"]
+                        attr["sampling_period"]
                     )
-                    timedim.unit = attr["sampling_interval.units"]
+                    timedim.unit = attr["sampling_period.dim"]
                 elif attr["type"] == "irregularlysampledsignal":
                     timedim = obj.append_range_dimension(attr["times"])
-                    timedim.unit = attr["times.units"]
+                    timedim.unit = attr["times.dim"]
                 timedim.label = "time"
                 timedim.offset = attr["t_start"]
         else:
@@ -1043,36 +1042,65 @@ class NixIO(BaseIO):
     def _neo_data_to_nix(cls, neoobj):
         attr = dict()
         attr["data"] = np.transpose(neoobj.magnitude)
-        attr["data.units"] = cls._get_units(neoobj)
+        attr["data.scaling"], attr["data.dim"] = convert_units(neoobj.units)
         if isinstance(neoobj, IrregularlySampledSignal):
-            attr["times"] = neoobj.times.magnitude
-            attr["times.units"] = cls._get_units(neoobj.times)
-        else:
-            attr["times.units"] = cls._get_units(neoobj.times, True)
-        if hasattr(neoobj, "t_start"):
-            attr["t_start"] = neoobj.t_start.magnitude.item()
-            attr["t_start.units"] = cls._get_units(neoobj.t_start)
-        if hasattr(neoobj, "t_stop"):
-            attr["t_stop"] = neoobj.t_stop.magnitude.item()
-            attr["t_stop.units"] = cls._get_units(neoobj.t_stop)
+            # times should be rescaled such that the dimension units are SI
+            # the original neo (potentially compound) units will be stored as
+            # metadata
+            tunits = neoobj.times.units
+            scale, dim = convert_units(tunits)
+            attr["times.scaling"] = scale
+            attr["times.dim"] = dim
+            times = neoobj.times
+            times = times.rescale(dim)
+            attr["times"] = times.magnitude
         if hasattr(neoobj, "sampling_period"):
-            attr["sampling_interval"] = neoobj.sampling_period.magnitude.item()
-            attr["sampling_interval.units"] = cls._get_units(
-                neoobj.sampling_period
-            )
+            spunits = neoobj.sampling_period.units
+            scale, dim = convert_units(spunits)
+            attr["sampling_period.scaling"] = scale
+            attr["sampling_period.dim"] = dim
+            sp = neoobj.sampling_period
+            sp = sp.rescale(dim)
+            attr["sampling_period"] = sp.magnitude.item()
+        if hasattr(neoobj, "t_start"):
+            tsunits = neoobj.t_start.units
+            scale, dim = convert_units(tsunits)
+            attr["t_start.scaling"] = scale
+            attr["t_start.dim"] = dim
+            start = neoobj.t_start
+            start = start.rescale(attr["sampling_period.dim"])
+            attr["t_start"] = start.magnitude.item()
+        if hasattr(neoobj, "t_stop"):
+            tsunits = neoobj.t_stop.units
+            scale, dim = convert_units(tsunits)
+            attr["t_stop.scaling"] = scale
+            attr["t_stop.dim"] = dim
+            stop = neoobj.t_stop
+            stop = stop.rescale(dim)
+            attr["t_stop"] = stop.magnitude.item()
         if hasattr(neoobj, "durations"):
-            attr["extents"] = neoobj.durations
-            attr["extents.units"] = cls._get_units(neoobj.durations)
+            duraunits = neoobj.durations.units
+            scale, dim = convert_units(duraunits)
+            attr["durations.scaling"] = scale
+            attr["durations.dim"] = dim
+            attr["durations"] = neoobj.durations
         if hasattr(neoobj, "labels"):
             attr["labels"] = neoobj.labels.tolist()
         if hasattr(neoobj, "waveforms") and neoobj.waveforms is not None:
             attr["waveforms"] = list(wf.magnitude for wf in
                                      list(wfgroup for wfgroup in
                                           neoobj.waveforms))
-            attr["waveforms.units"] = cls._get_units(neoobj.waveforms)
+            scale, dim = convert_units(neoobj.waveforms.units)
+            attr["waveforms.scaling"] = scale
+            attr["waveforms.dim"] = dim
         if hasattr(neoobj, "left_sweep") and neoobj.left_sweep is not None:
-            attr["left_sweep"] = neoobj.left_sweep.magnitude
-            attr["left_sweep.units"] = cls._get_units(neoobj.left_sweep)
+            lsunits = neoobj.left_sweep.units
+            scale, dim = convert_units(lsunits)
+            attr["left_sweep.scaling"] = scale
+            attr["left_sweep.dim"] = dim
+            ls = neoobj.left_sweep
+            ls = ls.rescale(dim)
+            attr["left_sweep"] = ls.magnitude
         return attr
 
     def _write_property(self, section, name, v):
@@ -1132,24 +1160,6 @@ class NixIO(BaseIO):
             da for da in obj.data_arrays
             if da.type in ["neo.analogsignal", "neo.irregularlysampledsignal"]
         )
-
-    @staticmethod
-    def _get_units(quantity, simplify=False):
-        """
-        Returns the units of a quantity value or array as a string, or None if
-        it is dimensionless.
-
-        :param quantity: Quantity scalar or array
-        :param simplify: True/False Simplify units
-        :return: Units of the quantity or None if dimensionless
-        """
-        units = quantity.units.dimensionality
-        if simplify:
-            units = units.simplified
-        units = stringify(units)
-        if units == "dimensionless":
-            units = None
-        return units
 
     @staticmethod
     def _nix_attr_to_neo(nix_obj):

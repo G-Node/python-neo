@@ -726,8 +726,9 @@ class NixIOWriteTest(NixIOTest):
         block.segments.append(seg)
 
         units = pq.CompoundUnit("1/30000 * V")
+        srate = pq.Quantity(10, pq.CompoundUnit("1.0/10 * Hz"))
         asig = AnalogSignal(signal=self.rquant((10, 3), units),
-                            sampling_rate=pq.Quantity(10, "Hz"))
+                            sampling_rate=srate)
         seg.analogsignals.append(asig)
         self.write_and_compare([block])
 
