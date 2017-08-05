@@ -187,7 +187,11 @@ class NixIOTest(unittest.TestCase):
                            sorted(nixdalist, key=lambda d: d.name)):
             self.compare_attr(neosig, da)
             np.testing.assert_almost_equal(sig.magnitude, da)
-            self.assertEqual(neounit, da.unit)
+            coeff = da.polynom_coefficients
+            nixunit = da.unit
+            if coeff is not None:
+                nixunit = pq.CompoundUnit("{} * {}".format(coeff[1], nixunit))
+            self.assertEqual(pq.CompoundUnit(neounit), nixunit)
             timedim = da.dimensions[0]
             if isinstance(neosig, AnalogSignal):
                 self.assertEqual(timedim.dimension_type,
@@ -713,6 +717,48 @@ class NixIOWriteTest(NixIOTest):
                                      dtype=np.float,
                                      name="some sort of signal",
                                      description="the signal is described")
+        )
+        self.write_and_compare([block, anotherblock])
+
+    def test_signals_compound_units(self):
+        block = Block()
+        seg = Segment()
+        block.segments.append(seg)
+
+        units = pq.CompoundUnit("1/30000 * V")
+        asig = AnalogSignal(signal=self.rquant((10, 3), units),
+                            sampling_rate=pq.Quantity(10, "Hz"))
+        seg.analogsignals.append(asig)
+        self.write_and_compare([block])
+
+        anotherblock = Block("ir signal block")
+        seg = Segment("ir signal seg")
+        anotherblock.segments.append(seg)
+        irsig = IrregularlySampledSignal(
+            signal=np.random.random((20, 3)),
+            times=self.rquant(20, pq.CompoundUnit(" 0.1 * ms"), True),
+            units=pq.CompoundUnit("10 * V / s")
+        )
+        seg.irregularlysampledsignals.append(irsig)
+        self.write_and_compare([anotherblock])
+
+        block.segments[0].analogsignals.append(
+            AnalogSignal(signal=[10.0, 1.0, 3.0], units=pq.S,
+                         sampling_period=pq.Quantity(3, "s"),
+                         dtype=np.double, name="signal42",
+                         description="this is an analogsignal",
+                         t_start=45 * pq.CompoundUnit("3.14 * s")),
+        )
+        self.write_and_compare([block, anotherblock])
+
+        block.segments[0].irregularlysampledsignals.append(
+            IrregularlySampledSignal(times=np.random.random(10),
+                                     signal=np.random.random((10, 3)),
+                                     units="mV", time_units="s",
+                                     dtype=np.float,
+                                     name="some sort of signal",
+                                     description="the signal is described",
+                                     t_stop=pq.CompoundUnit("10 * years"))
         )
         self.write_and_compare([block, anotherblock])
 
