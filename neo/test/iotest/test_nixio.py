@@ -189,18 +189,27 @@ class NixIOTest(unittest.TestCase):
             np.testing.assert_almost_equal(sig.magnitude, da)
             coeff = da.polynom_coefficients
             nixunit = da.unit
-            if coeff is not None:
+            if nixunit is None:
+                print("Data Array with name {} has None unit".format(da.name))
+            if coeff:
                 nixunit = pq.CompoundUnit("{} * {}".format(coeff[1], nixunit))
             self.assertEqual(pq.CompoundUnit(neounit), nixunit)
             timedim = da.dimensions[0]
             if isinstance(neosig, AnalogSignal):
                 self.assertEqual(timedim.dimension_type,
                                  nix.DimensionType.Sample)
+                print("Analog signal time dim")
+                print("Neo sampling period: ", neosig.sampling_period)
+                print("Neo sampling rate: ", neosig.sampling_rate)
+                print("Nix interval: ", timedim.sampling_interval)
+                print("Nix unit: ", timedim.unit)
+                print("---")
                 self.assertEqual(
                     pq.Quantity(timedim.sampling_interval, timedim.unit),
                     neosig.sampling_period
                 )
-                self.assertEqual(timedim.offset, neosig.t_start.magnitude)
+                self.assertEqual(timedim.offset,
+                                 neosig.t_start.simplified.magnitude)
                 if "t_start.units" in da.metadata.props:
                     self.assertEqual(da.metadata["t_start.units"],
                                      str(neosig.t_start.dimensionality))
@@ -644,6 +653,7 @@ class NixIOWriteTest(NixIOTest):
 
     def write_and_compare(self, blocks):
         self.writer.write_all_blocks(blocks)
+        # self.compare_blocks(blocks, self.reader.blocks)
         self.compare_blocks(self.writer.read_all_blocks(), self.reader.blocks)
         self.compare_blocks(blocks, self.reader.blocks)
 

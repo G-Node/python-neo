@@ -56,7 +56,7 @@ def stringify(value):
 def convert_units(scaledunit):
     simple = scaledunit.simplified
     dim = str(simple.dimensionality)
-    scaling = simple.magnitude
+    scaling = simple.magnitude.item()
     return scaling, dim
 
 
@@ -330,17 +330,24 @@ class NixIO(BaseIO):
                 sampling_period = pq.Quantity(1, timedim.unit)
                 t_start = pq.Quantity(0, timedim.unit)
             else:
-                if "sampling_interval.units" in metadata.props:
-                    sample_units = metadata["sampling_interval.units"]
-                else:
-                    sample_units = timedim.unit
                 sampling_period = pq.Quantity(timedim.sampling_interval,
-                                              sample_units)
-                if "t_start.units" in metadata.props:
-                    tsunits = metadata["t_start.units"]
+                                              timedim.unit)
+                print(list(metadata.props))
+                if metadata["sampling_period.scaling"] != 1.0:
+                    cu = pq.CompoundUnit("{} * {}".format(
+                        metadata["sampling_period.scaling"],
+                        timedim.unit
+                    ))
+                    sampling_period = sampling_period.rescale(cu)
+                t_start = pq.Quantity(timedim.offset, timedim.unit)
+                if metadata["t_start.scaling"] != 1.0:
+                    tsu = pq.CompoundUnit("{} * {}".format(
+                        metadata["t_start.scaling"],
+                        metadata["t_start.dim"]
+                    ))
                 else:
-                    tsunits = timedim.unit
-                t_start = pq.Quantity(timedim.offset, tsunits)
+                    tsu = pq.Quantity(1, metadata["t_start.dim"])
+                t_start = t_start.rescale(tsu)
             neo_signal = AnalogSignal(
                 signal=signaldata, sampling_period=sampling_period,
                 t_start=t_start, **neo_attrs
@@ -920,7 +927,7 @@ class NixIO(BaseIO):
         if isinstance(nixobj, list):
             metadata = nixobj[0].metadata
             for obj in nixobj:
-                if "data.units" in attr:
+                if "data.dim" in attr:
                     scaling = attr["data.scaling"]
                     dim = attr["data.dim"]
                     obj.unit = dim
@@ -930,14 +937,19 @@ class NixIO(BaseIO):
                         attr["sampling_period"]
                     )
                     timedim.unit = attr["sampling_period.dim"]
+                    metadata["sampling_period.scaling"] =\
+                        attr["sampling_period.scaling"]
                 elif attr["type"] == "irregularlysampledsignal":
                     timedim = obj.append_range_dimension(attr["times"])
                     timedim.unit = attr["times.dim"]
+                    metadata["times.scaling"] = attr["times.scaling"]
                 timedim.label = "time"
                 timedim.offset = attr["t_start"]
+                metadata["t_start.dim"] = attr["t_start.dim"]
+                metadata["t_start.scaling"] = attr["t_start.scaling"]
         else:
             metadata = nixobj.metadata
-            nixobj.positions.unit = attr["data.units"]
+            nixobj.positions.unit = attr["data.dim"]
             blockpath = "/" + path.split("/")[1]
             parentblock = self._get_object_at(blockpath)
             if "durations" in attr:
@@ -985,7 +997,7 @@ class NixIO(BaseIO):
                 wftime = wfda.append_sampled_dimension(
                     attr["sampling_period"]
                 )
-                wftime.units = attr["sampling_period.dim"]
+                wftime.unit = attr["sampling_period.dim"]
                 wftime.label = "time"
                 if "left_sweep" in attr:
                     self._write_property(wfda.metadata, "left_sweep",
@@ -1074,7 +1086,11 @@ class NixIO(BaseIO):
             attr["t_start.scaling"] = scale
             attr["t_start.dim"] = dim
             start = neoobj.t_start
-            start = start.rescale(attr["sampling_period.dim"])
+            if "sampling_period.dim" in attr:
+                dim = attr["sampling_period.dim"]
+            else:
+                dim = attr["times.dim"]
+            start = start.rescale(dim)
             attr["t_start"] = start.magnitude.item()
         if hasattr(neoobj, "t_stop"):
             tsunits = neoobj.t_stop.units
