@@ -308,7 +308,8 @@ class NixIOTest(unittest.TestCase):
                     np.testing.assert_almost_equal(scaling * nixmd[str(k)],
                                                    v.magnitude)
                 else:
-                    self.assertEqual(nixmd[str(k)], v)
+                    self.assertEqual(nixmd[str(k)], v,
+                                     "Property value mismatch: {}".format(k))
 
     @classmethod
     def create_full_nix_file(cls, filename):
@@ -369,6 +370,7 @@ class NixIOTest(unittest.TestCase):
                 da_asig.append_set_dimension()
                 group.data_arrays.append(da_asig)
                 siggroup.append(da_asig)
+            asig_md["t_start.dim"] = "ms"
             allsignalgroups.append(siggroup)
 
         # irregularlysampledsignals
@@ -744,7 +746,7 @@ class NixIOWriteTest(NixIOTest):
         anotherblock.segments.append(seg)
         irsig = IrregularlySampledSignal(
             signal=np.random.random((20, 3)),
-            times=self.rquant(20, pq.CompoundUnit(" 0.1 * ms"), True),
+            times=self.rquant(20, pq.CompoundUnit("0.1 * ms"), True),
             units=pq.CompoundUnit("10 * V / s")
         )
         seg.irregularlysampledsignals.append(irsig)
@@ -759,16 +761,15 @@ class NixIOWriteTest(NixIOTest):
         )
         self.write_and_compare([block, anotherblock])
 
-        t_stop = 3 * pq.CompoundUnit("10 * years")
+        times = self.rquant(10, pq.CompoundUnit("3 * year"), True)
         block.segments[0].irregularlysampledsignals.append(
-            IrregularlySampledSignal(times=np.random.random(10),
+            IrregularlySampledSignal(times=times,
                                      signal=np.random.random((10, 3)),
-                                     units="mV", time_units="s",
-                                     dtype=np.float,
+                                     units="mV", dtype=np.float,
                                      name="some sort of signal",
-                                     description="the signal is described",
-                                     t_stop=t_stop)
+                                     description="the signal is described")
         )
+
         self.write_and_compare([block, anotherblock])
 
     def test_epoch_write(self):
