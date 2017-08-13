@@ -313,7 +313,7 @@ class NixIO(BaseIO):
 
         unit = nix_da_group[0].unit
         coeff = nix_da_group[0].polynom_coefficients
-        if coeff is not None:
+        if coeff:
             unit = pq.CompoundUnit("{} * {}".format(coeff[1], unit))
 
         if lazy:
@@ -953,13 +953,13 @@ class NixIO(BaseIO):
                 labeldim.labels = attr["labels"]
             if "t_start" in attr:
                 metadata["t_start"] = nix.Value(attr["t_start"])
-                metadata["t_start"].unit = attr["t_start.dim"]
+                metadata.props["t_start"].unit = attr["t_start.dim"]
                 if "t_start.scaling" in attr:
                     metadata["t_start.scaling"] =\
                         nix.Value(attr["t_start.scaling"])
             if "t_stop" in attr:
                 metadata["t_stop"] = nix.Value(attr["t_stop"])
-                metadata["t_stop"].unit = nix.Value(attr["t_stop.dim"])
+                metadata.props["t_stop"].unit = attr["t_stop.dim"]
                 if "t_stop.scaling" in attr:
                     metadata["t_stop.scaling"] =\
                         nix.Value(attr["t_stop.scaling"])
@@ -989,14 +989,12 @@ class NixIO(BaseIO):
                 wftime.unit = attr["sampling_period.dim"]
                 wftime.label = "time"
                 if "left_sweep" in attr:
-                    self._write_property(wfda.metadata, "left_sweep",
-                                         attr["left_sweep"])
-                    self._write_property(wfda.metadata, "left_sweep.dim",
-                                         attr["left_sweep.dim"])
+                    wfdamd = self._write_property(wfda.metadata, "left_sweep",
+                                                  attr["left_sweep"])
+                    wfdamd.unit = attr["left_sweep.dim"]
                     if "left_sweet.scaling" in attr:
-                        self._write_property(wfda.metadata,
-                                             "left_sweep.scaling",
-                                             attr["left_sweep.scaling"])
+                        wfda.metadata["left_sweep.scaling"] =\
+                            nix.Value(attr["left_sweep.scaling"])
 
     def _update_maps(self, obj, lazy):
         objidx = self._find_lazy_loaded(obj)
@@ -1191,8 +1189,9 @@ class NixIO(BaseIO):
         neo_attrs["description"] = stringify(nix_obj.definition)
         if nix_obj.metadata:
             for prop in nix_obj.metadata.props:
-                if prop.name.endswith(".scaling"):
-                    # skip this -- use it for scaling later
+                if (prop.name.endswith(".scaling") or
+                        prop.name.endswith(".dim")):
+                    # Skipping. Not a neo attribute. Used for scaling units.
                     continue
                 values = prop.values
                 values = list(v.value for v in values)
@@ -1200,15 +1199,10 @@ class NixIO(BaseIO):
                     usname = "{}.scaling".format(prop)
                     units = prop.unit
                     if usname in nix_obj.metadata:
-                        print("Scaling")
                         scaling = nix_obj.metadata[usname]
                         units = pq.CompoundUnit("{} * {}".format(scaling,
                                                                  units))
-                    else:
-                        print("No scaling")
                     values = pq.Quantity(values, units)
-                    print("Read quantity")
-                    print(values)
                 if len(values) == 1:
                     neo_attrs[prop.name] = values[0]
                 else:
