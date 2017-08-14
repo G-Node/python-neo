@@ -12,6 +12,7 @@ Tests for NixIO
 """
 
 import os
+from collections import Iterable
 from datetime import datetime
 
 import unittest
@@ -305,8 +306,10 @@ class NixIOTest(unittest.TestCase):
                             scaling, nixunit
                         ))
                     self.assertEqual(nixunit, str(v.dimensionality))
-                    np.testing.assert_almost_equal(scaling * nixmd[str(k)],
-                                                   v.magnitude)
+                    nixvalue = nixmd[str(k)]
+                    if isinstance(nixvalue, Iterable):
+                        nixvalue = scaling * np.array(nixvalue)
+                    np.testing.assert_almost_equal(nixvalue, v.magnitude)
                 else:
                     self.assertEqual(nixmd[str(k)], v,
                                      "Property value mismatch: {}".format(k))
