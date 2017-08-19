@@ -181,29 +181,32 @@ class NixIOTest(unittest.TestCase):
         """
         nixmd = nixdalist[0].metadata
         self.assertTrue(all(nixmd == da.metadata for da in nixdalist))
-        neounit = str(neosig.dimensionality)
+        neounit = neosig.units
         for sig, da in zip(np.transpose(neosig),
                            sorted(nixdalist, key=lambda d: d.name)):
             self.compare_attr(neosig, da)
-            np.testing.assert_almost_equal(sig.magnitude, da)
+            daquant = pq.Quantity(da[:], da.unit)
+            np.testing.assert_almost_equal(sig, daquant)
             coeff = da.polynom_coefficients
             nixunit = da.unit
             if coeff:
                 nixunit = pq.CompoundUnit("{} * {}".format(coeff[1], nixunit))
-            self.assertEqual(pq.CompoundUnit(neounit), nixunit)
+            else:
+                nixunit = pq.Quantity(1, nixunit)
+            self.assertEqual(neounit, nixunit)
             timedim = da.dimensions[0]
             if isinstance(neosig, AnalogSignal):
                 self.assertEqual(timedim.dimension_type,
                                  nix.DimensionType.Sample)
-                self.assertEqual(
-                    pq.Quantity(timedim.sampling_interval, timedim.unit),
-                    neosig.sampling_period
-                )
-                self.assertEqual(timedim.offset,
-                                 neosig.t_start.simplified.magnitude)
+                neosp = neosig.sampling_period
+                nixsp = pq.Quantity(timedim.sampling_interval, timedim.unit)
+                self.assertEqual(neosp, nixsp)
+                tsunit = timedim.unit
                 if "t_start.units" in da.metadata.props:
-                    self.assertEqual(da.metadata["t_start.units"],
-                                     str(neosig.t_start.dimensionality))
+                    tsunit = da.metadata["t_start.units"]
+                neots = neosig.t_start
+                nixts = pq.Quantity(timedim.offset, tsunit)
+                self.assertEqual(neots, nixts)
             elif isinstance(neosig, IrregularlySampledSignal):
                 self.assertEqual(timedim.dimension_type,
                                  nix.DimensionType.Range)
@@ -265,16 +268,18 @@ class NixIOTest(unittest.TestCase):
         np.testing.assert_almost_equal(spiketrain.times.magnitude,
                                        mtag.positions)
         if len(mtag.features):
-            neowf = spiketrain.waveforms
-            nixwf = mtag.features[0].data
-            self.assertEqual(np.shape(neowf), np.shape(nixwf))
-            self.assertEqual(nixwf.unit, str(neowf.units.dimensionality))
-            np.testing.assert_almost_equal(neowf.magnitude, nixwf)
-            self.assertEqual(nixwf.dimensions[0].dimension_type,
+            neowfs = spiketrain.waveforms
+            nixwfs = mtag.features[0].data
+            self.assertEqual(np.shape(neowfs), np.shape(nixwfs))
+            for nixwf, neowf in zip(nixwfs, neowfs):
+                for nixrow, neorow in zip(nixwf, neowf):
+                    for nixv, neov in zip(nixrow, neorow):
+                        self.assertEqual(pq.Quantity(nixv, nixwfs.unit), neov)
+            self.assertEqual(nixwfs.dimensions[0].dimension_type,
                              nix.DimensionType.Set)
-            self.assertEqual(nixwf.dimensions[1].dimension_type,
+            self.assertEqual(nixwfs.dimensions[1].dimension_type,
                              nix.DimensionType.Set)
-            self.assertEqual(nixwf.dimensions[2].dimension_type,
+            self.assertEqual(nixwfs.dimensions[2].dimension_type,
                              nix.DimensionType.Sample)
 
     def compare_attr(self, neoobj, nixobj):
