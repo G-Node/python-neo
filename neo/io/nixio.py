@@ -321,6 +321,8 @@ class NixIO(BaseIO):
             lazy_shape = (len(nix_da_group[0]), len(nix_da_group))
         else:
             signaldata = np.array([d[:] for d in nix_da_group]).transpose()
+            if coeff:
+                signaldata /= coeff[1]
             signaldata = pq.Quantity(signaldata, unit)
             lazy_shape = None
         timedim = self._get_time_dimension(nix_da_group[0])
