@@ -84,6 +84,8 @@ class NixIO(BaseIO):
     extensions = ["h5"]
     mode = "file"
 
+    nix_version = nix.__version__ if HAVE_NIX else "NIX NOT FOUND"
+
     _container_map = {
         "segments": "groups",
         "analogsignals": "data_arrays",
