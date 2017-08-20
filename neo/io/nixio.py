@@ -403,12 +403,24 @@ class NixIO(BaseIO):
             eest = Event(times=times, labels=labels, **neo_attrs)
         elif neo_type == "neo.spiketrain":
             if "t_start" in neo_attrs:
-                t_start = neo_attrs["t_start"]
+                unit = nix_mtag.positions.unit
+                if "t_start.dim" in neo_attrs:
+                    unit = neo_attrs["t_start.dim"]
+                if "t_start.scaling" in neo_attrs:
+                    scaling = neo_attrs["t_start.scaling"]
+                    unit = pq.CompoundUnit(unit, scaling)
+                t_start = pq.Quantity(neo_attrs["t_start"], unit)
                 del neo_attrs["t_start"]
             else:
                 t_start = None
             if "t_stop" in neo_attrs:
-                t_stop = neo_attrs["t_stop"]
+                unit = nix_mtag.positions.unit
+                if "t_stop.dim" in neo_attrs:
+                    unit = neo_attrs["t_stop.dim"]
+                if "t_stop.scaling" in neo_attrs:
+                    scaling = neo_attrs["t_stop.scaling"]
+                    unit = pq.CompoundUnit(unit, scaling)
+                t_stop = pq.Quantity(neo_attrs["t_stop"], unit)
                 del neo_attrs["t_stop"]
             else:
                 t_stop = None
@@ -937,16 +949,16 @@ class NixIO(BaseIO):
             nixobj.positions.unit = attr["data.dim"]
             blockpath = "/" + path.split("/")[1]
             parentblock = self._get_object_at(blockpath)
+            if "data.scaling" in attr:
+                scaling = attr["data.scaling"]
+                nixobj.positions.polynom_coefficients = (0.0, scaling)
             if "durations" in attr:
                 extname = nixobj.name + ".durations"
                 exttype = nixobj.type + ".durations"
                 if extname in parentblock.data_arrays:
                     del parentblock.data_arrays[extname]
-                extents = parentblock.create_data_array(
-                    extname,
-                    exttype,
-                    data=attr["durations"]
-                )
+                extents = parentblock.create_data_array(extname, exttype,
+                                                        data=attr["durations"])
                 extents.unit = attr["durations.dim"]
                 if "durations.scaling" in attr:
                     extents.polynom_coefficients =\
