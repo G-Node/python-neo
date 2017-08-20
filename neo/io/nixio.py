@@ -567,6 +567,9 @@ class NixIO(BaseIO):
             if oldhash is None:
                 nixobj = self._create_nix_obj(loc, attr)
             else:
+                self._update_data(loc, attr)
+                if objpath in self._path_map:
+                    del self._path_map[objpath]
                 nixobj = self._get_object_at(objpath)
             self._write_attr_annotations(nixobj, attr, objpath)
             if isinstance(obj, pq.Quantity):
@@ -639,6 +642,39 @@ class NixIO(BaseIO):
         else:
             raise ValueError("Unable to create NIX object. Invalid type.")
         return nixobj
+
+    def _update_data(self, loc, attr):
+        parentobj = self._get_object_at(loc)
+        if attr["type"] in ("analogsignal", "irregularlysampledsignal"):
+            blockpath = "/" + loc.split("/")[1]
+            parentblock = self._get_object_at(blockpath)
+            nixobj = list()
+            typestr = "neo.{}".format(attr["type"])
+            sigmd = parentobj.metadata[attr["name"]]
+            objname = attr["name"]
+            if objname in self._nix_map:
+                del self._nix_map[objname]
+            if objname in self._object_hashes:
+                del self._object_hashes[objname]
+            for idx, datarow in enumerate(attr["data"]):
+                name = "{}.{}".format(objname, idx)
+                del parentobj.data_arrays[name]
+                del parentblock.data_arrays[name]
+                da = parentblock.create_data_array(name, typestr, data=datarow)
+                da.metadata = sigmd
+                nixobj.append(da)
+            parentobj.data_arrays.extend(nixobj)
+        elif attr["type"] in ("epoch", "event", "spiketrain"):
+            blockpath = "/" + loc.split("/")[1]
+            parentblock = self._get_object_at(blockpath)
+            typestr = "neo.{}".format(attr["type"])
+            tname = "{}.times".format(attr["name"])
+            del parentblock.data_arrays[tname]
+            timesda = parentblock.create_data_array(
+                tname, "{}.times".format(typestr), data=attr["data"]
+            )
+            nixobj = parentblock.multi_tags[attr["name"]]
+            nixobj.positions = timesda
 
     def _link_nix_obj(self, obj, loc, neocontainer):
         parentobj = self._get_object_at(loc)
