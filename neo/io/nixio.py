@@ -53,11 +53,20 @@ def stringify(value):
     return str(value)
 
 
-def convert_units(scaledunit):
-    simple = scaledunit.simplified
-    dim = str(simple.dimensionality)
-    scaling = simple.magnitude.item()
-    return scaling, dim
+def create_quantity(values, unitstr):
+    if "*" in unitstr:
+        unit = pq.CompoundUnit(unitstr)
+    else:
+        unit = unitstr
+    return pq.Quantity(values, unit)
+
+
+def units_to_string(pqunit):
+    dim = str(pqunit.dimensionality)
+    scaling = pqunit.magnitude.item()
+    if scaling == 1:
+        return dim.strip("()") if dim.startswith("(") else dim
+    return "{} * {}".format(scaling, dim)
 
 
 def calculate_timestamp(dt):
@@ -286,7 +295,8 @@ class NixIO(BaseIO):
         if "coordinates" in chx[0]:
             coord_units = chx[0]["coordinates.units"]
             coord_values = list(c["coordinates"] for c in chx)
-            neo_attrs["coordinates"] = pq.Quantity(coord_values, coord_units)
+            neo_attrs["coordinates"] = create_quantity(coord_values,
+                                                       coord_units)
         rcg = ChannelIndex(**neo_attrs)
         self._neo_map[nix_source.name] = rcg
         return rcg
@@ -314,43 +324,25 @@ class NixIO(BaseIO):
         neo_attrs["nix_name"] = metadata.name  # use the common base name
 
         unit = nix_da_group[0].unit
-        coeff = nix_da_group[0].polynom_coefficients
-        if coeff:
-            unit = pq.CompoundUnit("{} * {}".format(coeff[1], unit))
-
         if lazy:
-            signaldata = pq.Quantity(np.empty(0), unit)
+            signaldata = create_quantity(np.empty(0), unit)
             lazy_shape = (len(nix_da_group[0]), len(nix_da_group))
         else:
             signaldata = np.array([d[:] for d in nix_da_group]).transpose()
-            if coeff:
-                signaldata /= coeff[1]
-            signaldata = pq.Quantity(signaldata, unit)
+            signaldata = create_quantity(signaldata, unit)
             lazy_shape = None
         timedim = self._get_time_dimension(nix_da_group[0])
         if (neo_type == "neo.analogsignal" or
                 timedim.dimension_type == nix.DimensionType.Sample):
             if lazy:
-                sampling_period = pq.Quantity(1, timedim.unit)
-                t_start = pq.Quantity(0, timedim.unit)
+                sampling_period = create_quantity(1, timedim.unit)
+                t_start = create_quantity(0, timedim.unit)
             else:
-                sampling_period = pq.Quantity(timedim.sampling_interval,
-                                              timedim.unit)
-                if "sampling_period.scaling" in metadata:
-                    cu = pq.CompoundUnit("{} * {}".format(
-                        metadata["sampling_period.scaling"],
-                        timedim.unit
-                    ))
-                    sampling_period = sampling_period.rescale(cu)
-                t_start = pq.Quantity(timedim.offset, timedim.unit)
-                if "t_start.scaling" in metadata:
-                    tsu = pq.CompoundUnit("{} * {}".format(
-                        metadata["t_start.scaling"],
-                        metadata["t_start.dim"]
-                    ))
-                else:
-                    tsu = pq.Quantity(1, metadata["t_start.dim"])
-                t_start = t_start.rescale(tsu)
+                sampling_period = create_quantity(timedim.sampling_interval,
+                                                  timedim.unit)
+                t_start = neo_attrs["t_start"]
+            del neo_attrs["t_start"]
+
             neo_signal = AnalogSignal(
                 signal=signaldata, sampling_period=sampling_period,
                 t_start=t_start, **neo_attrs
@@ -358,9 +350,9 @@ class NixIO(BaseIO):
         elif (neo_type == "neo.irregularlysampledsignal"
               or timedim.dimension_type == nix.DimensionType.Range):
             if lazy:
-                times = pq.Quantity(np.empty(0), timedim.unit)
+                times = create_quantity(np.empty(0), timedim.unit)
             else:
-                times = pq.Quantity(timedim.ticks, timedim.unit)
+                times = create_quantity(timedim.ticks, timedim.unit)
             neo_signal = IrregularlySampledSignal(
                 signal=signaldata, times=times, **neo_attrs
             )
@@ -378,18 +370,18 @@ class NixIO(BaseIO):
 
         time_unit = nix_mtag.positions.unit
         if lazy:
-            times = pq.Quantity(np.empty(0), time_unit)
+            times = create_quantity(np.empty(0), time_unit)
             lazy_shape = np.shape(nix_mtag.positions)
         else:
-            times = pq.Quantity(nix_mtag.positions, time_unit)
+            times = create_quantity(nix_mtag.positions, time_unit)
             lazy_shape = None
         if neo_type == "neo.epoch":
             if lazy:
-                durations = pq.Quantity(np.empty(0), nix_mtag.extents.unit)
+                durations = create_quantity(np.empty(0), nix_mtag.extents.unit)
                 labels = np.empty(0, dtype='S')
             else:
-                durations = pq.Quantity(nix_mtag.extents,
-                                        nix_mtag.extents.unit)
+                durations = create_quantity(nix_mtag.extents,
+                                            nix_mtag.extents.unit)
                 labels = np.array(nix_mtag.positions.dimensions[0].labels,
                                   dtype="S")
             eest = Epoch(times=times, durations=durations, labels=labels,
@@ -402,47 +394,24 @@ class NixIO(BaseIO):
                                   dtype="S")
             eest = Event(times=times, labels=labels, **neo_attrs)
         elif neo_type == "neo.spiketrain":
-            if "t_start" in neo_attrs:
-                unit = nix_mtag.positions.unit
-                if "t_start.dim" in neo_attrs:
-                    unit = neo_attrs["t_start.dim"]
-                if "t_start.scaling" in neo_attrs:
-                    scaling = neo_attrs["t_start.scaling"]
-                    unit = pq.CompoundUnit(unit, scaling)
-                t_start = pq.Quantity(neo_attrs["t_start"], unit)
-                del neo_attrs["t_start"]
-            else:
-                t_start = None
-            if "t_stop" in neo_attrs:
-                unit = nix_mtag.positions.unit
-                if "t_stop.dim" in neo_attrs:
-                    unit = neo_attrs["t_stop.dim"]
-                if "t_stop.scaling" in neo_attrs:
-                    scaling = neo_attrs["t_stop.scaling"]
-                    unit = pq.CompoundUnit(unit, scaling)
-                t_stop = pq.Quantity(neo_attrs["t_stop"], unit)
-                del neo_attrs["t_stop"]
-            else:
-                t_stop = None
-            eest = SpikeTrain(times=times, t_start=t_start,
-                              t_stop=t_stop, **neo_attrs)
+            eest = SpikeTrain(times=times, **neo_attrs)
             if nix_mtag.features:
                 wfda = nix_mtag.features[0].data
                 wftime = self._get_time_dimension(wfda)
                 if lazy:
-                    eest.waveforms = pq.Quantity(np.empty((0, 0, 0)),
-                                                 wfda.unit)
-                    eest.sampling_period = pq.Quantity(1, wftime.unit)
-                    eest.left_sweep = pq.Quantity(0, wftime.unit)
+                    eest.waveforms = create_quantity(np.empty((0, 0, 0)),
+                                                     wfda.unit)
+                    eest.sampling_period = create_quantity(1, wftime.unit)
+                    eest.left_sweep = create_quantity(0, wftime.unit)
                 else:
-                    eest.waveforms = pq.Quantity(wfda, wfda.unit)
+                    eest.waveforms = create_quantity(wfda, wfda.unit)
                     interval_units = wftime.unit
-                    eest.sampling_period = pq.Quantity(
+                    eest.sampling_period = create_quantity(
                         wftime.sampling_interval, interval_units
                     )
                     left_sweep_units = wftime.unit
                     if "left_sweep" in wfda.metadata:
-                        eest.left_sweep = pq.Quantity(
+                        eest.left_sweep = create_quantity(
                             wfda.metadata["left_sweep"], left_sweep_units
                         )
         else:
@@ -616,6 +585,7 @@ class NixIO(BaseIO):
             for idx, datarow in enumerate(attr["data"]):
                 name = "{}.{}".format(attr["name"], idx)
                 da = parentblock.create_data_array(name, typestr, data=datarow)
+                da.unit = attr["data.units"]
                 da.metadata = sigmd
                 nixobj.append(da)
             parentobj.data_arrays.extend(nixobj)
@@ -956,38 +926,24 @@ class NixIO(BaseIO):
         if isinstance(nixobj, list):
             metadata = nixobj[0].metadata
             for obj in nixobj:
-                if "data.dim" in attr:
-                    dim = attr["data.dim"]
-                    obj.unit = dim
-                    if "data.scaling" in attr:
-                        scaling = attr["data.scaling"]
-                        obj.polynom_coefficients = (0.0, scaling)
+                obj.unit = attr["data.units"]
                 if attr["type"] == "analogsignal":
                     timedim = obj.append_sampled_dimension(
                         attr["sampling_period"]
                     )
-                    timedim.unit = attr["sampling_period.dim"]
-                    if "sampling_period.scaling" in attr:
-                        metadata["sampling_period.scaling"] =\
-                            attr["sampling_period.scaling"]
+                    timedim.unit = attr["sampling_period.units"]
+                    timedim.offset = attr["t_start"]
                 elif attr["type"] == "irregularlysampledsignal":
                     timedim = obj.append_range_dimension(attr["times"])
-                    timedim.unit = attr["times.dim"]
-                    if "times.scaling" in attr:
-                        metadata["times.scaling"] = attr["times.scaling"]
+                    timedim.unit = attr["times.units"]
                 timedim.label = "time"
-                timedim.offset = attr["t_start"]
-                metadata["t_start.dim"] = attr["t_start.dim"]
-                if "t_start.scaling" in attr:
-                    metadata["t_start.scaling"] = attr["t_start.scaling"]
+                metadata["t_start"] = attr["t_start"]
+                metadata.props["t_start"].unit = attr["t_start.units"]
         else:
             metadata = nixobj.metadata
-            nixobj.positions.unit = attr["data.dim"]
+            nixobj.positions.unit = attr["data.units"]
             blockpath = "/" + path.split("/")[1]
             parentblock = self._get_object_at(blockpath)
-            if "data.scaling" in attr:
-                scaling = attr["data.scaling"]
-                nixobj.positions.polynom_coefficients = (0.0, scaling)
             if "durations" in attr:
                 extname = nixobj.name + ".durations"
                 exttype = nixobj.type + ".durations"
@@ -995,26 +951,17 @@ class NixIO(BaseIO):
                     del parentblock.data_arrays[extname]
                 extents = parentblock.create_data_array(extname, exttype,
                                                         data=attr["durations"])
-                extents.unit = attr["durations.dim"]
-                if "durations.scaling" in attr:
-                    extents.polynom_coefficients =\
-                        (0.0, attr["durations.scaling"])
+                extents.unit = attr["durations.units"]
                 nixobj.extents = extents
             if "labels" in attr:
                 labeldim = nixobj.positions.append_set_dimension()
                 labeldim.labels = attr["labels"]
             if "t_start" in attr:
                 metadata["t_start"] = nix.Value(attr["t_start"])
-                metadata.props["t_start"].unit = attr["t_start.dim"]
-                if "t_start.scaling" in attr:
-                    metadata["t_start.scaling"] =\
-                        nix.Value(attr["t_start.scaling"])
+                metadata.props["t_start"].unit = attr["t_start.units"]
             if "t_stop" in attr:
                 metadata["t_stop"] = nix.Value(attr["t_stop"])
-                metadata.props["t_stop"].unit = attr["t_stop.dim"]
-                if "t_stop.scaling" in attr:
-                    metadata["t_stop.scaling"] =\
-                        nix.Value(attr["t_stop.scaling"])
+                metadata.props["t_stop"].unit = attr["t_stop.units"]
             if "waveforms" in attr:
                 wfname = nixobj.name + ".waveforms"
                 if wfname in parentblock.data_arrays:
@@ -1028,25 +975,19 @@ class NixIO(BaseIO):
                 wfda.metadata = nixobj.metadata.create_section(
                     wfda.name, "neo.waveforms.metadata"
                 )
-                wfda.unit = attr["waveforms.dim"]
-                if "waveforms.scaling" in attr:
-                    wfda.polynom_coefficients =\
-                        (0.0, attr["waveforms.scaling"])
+                wfda.unit = attr["waveforms.units"]
                 nixobj.create_feature(wfda, nix.LinkType.Indexed)
                 wfda.append_set_dimension()
                 wfda.append_set_dimension()
                 wftime = wfda.append_sampled_dimension(
                     attr["sampling_period"]
                 )
-                wftime.unit = attr["sampling_period.dim"]
+                wftime.unit = attr["sampling_period.units"]
                 wftime.label = "time"
                 if "left_sweep" in attr:
                     wfdamd = self._write_property(wfda.metadata, "left_sweep",
                                                   attr["left_sweep"])
-                    wfdamd.unit = attr["left_sweep.dim"]
-                    if "left_sweet.scaling" in attr:
-                        wfda.metadata["left_sweep.scaling"] =\
-                            nix.Value(attr["left_sweep.scaling"])
+                    wfdamd.unit = attr["left_sweep.units"]
 
     def _update_maps(self, obj, lazy):
         objidx = self._find_lazy_loaded(obj)
@@ -1101,79 +1042,42 @@ class NixIO(BaseIO):
     def _neo_data_to_nix(cls, neoobj):
         attr = dict()
         attr["data"] = np.transpose(neoobj.magnitude)
-        attr["data.scaling"], attr["data.dim"] = convert_units(neoobj.units)
+        attr["data.units"] = units_to_string(neoobj.units)
         if isinstance(neoobj, IrregularlySampledSignal):
             # times for other objects (Events, Epochs, SpikeTrains) are the
             # data property, so we only need to explicitly take the times for
             # IrregularlySampledSignals
-            # times should be rescaled such that the dimension units are SI
-            # the original neo (potentially compound) units will be stored as
-            # metadata
-            tunits = neoobj.times.units
-            scale, dim = convert_units(tunits)
-            if scale != 1.0:
-                attr["times.scaling"] = scale
-            attr["times.dim"] = dim
-            times = neoobj.times
-            times = times.rescale(dim)
-            attr["times"] = times.magnitude
+            attr["times.units"] = units_to_string(neoobj.times.units)
+            attr["times"] = neoobj.times.magnitude
+            tdimunits = attr["times.units"]
         if hasattr(neoobj, "sampling_period"):
-            spunits = neoobj.sampling_period.units
-            scale, dim = convert_units(spunits)
-            if scale != 1.0:
-                attr["sampling_period.scaling"] = scale
-            attr["sampling_period.dim"] = dim
             sp = neoobj.sampling_period
-            sp = sp.rescale(dim)
             attr["sampling_period"] = sp.magnitude.item()
+            attr["sampling_period.units"] = units_to_string(sp.units)
+            tdimunits = attr["sampling_period.units"]
         if hasattr(neoobj, "t_start"):
-            tsunits = neoobj.t_start.units
-            scale, dim = convert_units(tsunits)
-            if scale != 1.0:
-                attr["t_start.scaling"] = scale
-            attr["t_start.dim"] = dim
-            start = neoobj.t_start
-            if "sampling_period.dim" in attr:
-                dim = attr["sampling_period.dim"]
-            else:
-                dim = attr["times.dim"]
-            start = start.rescale(dim)
-            attr["t_start"] = start.magnitude.item()
+            tstart = neoobj.t_start
+            attr["t_start"] = tstart.rescale(tdimunits).magnitude.item()
+            attr["t_start.units"] = units_to_string(tstart.units)
         if hasattr(neoobj, "t_stop"):
-            tsunits = neoobj.t_stop.units
-            scale, dim = convert_units(tsunits)
-            if scale != 1.0:
-                attr["t_stop.scaling"] = scale
-            attr["t_stop.dim"] = dim
-            stop = neoobj.t_stop
-            stop = stop.rescale(dim)
-            attr["t_stop"] = stop.magnitude.item()
+            tstop = neoobj.t_stop
+            attr["t_stop"] = tstop.magnitude.item()
+            attr["t_stop.units"] = units_to_string(tstop.units)
         if hasattr(neoobj, "durations"):
-            duraunits = neoobj.durations.units
-            scale, dim = convert_units(duraunits)
-            if scale != 1.0:
-                attr["durations.scaling"] = scale
-            attr["durations.dim"] = dim
-            attr["durations"] = neoobj.durations
+            dura = neoobj.durations
+            attr["durations"] = dura.magnitude
+            attr["durations.units"] = units_to_string(dura.units)
         if hasattr(neoobj, "labels"):
             attr["labels"] = neoobj.labels.tolist()
         if hasattr(neoobj, "waveforms") and neoobj.waveforms is not None:
             attr["waveforms"] = list(wf.magnitude for wf in
                                      list(wfgroup for wfgroup in
                                           neoobj.waveforms))
-            scale, dim = convert_units(neoobj.waveforms.units)
-            if scale != 1.0:
-                attr["waveforms.scaling"] = scale
-            attr["waveforms.dim"] = dim
+            attr["waveforms.units"] = units_to_string(neoobj.waveforms.units)
         if hasattr(neoobj, "left_sweep") and neoobj.left_sweep is not None:
-            lsunits = neoobj.left_sweep.units
-            scale, dim = convert_units(lsunits)
-            if scale != 1.0:
-                attr["left_sweep.scaling"] = scale
-            attr["left_sweep.dim"] = dim
-            ls = neoobj.left_sweep
-            ls = ls.rescale(dim)
-            attr["left_sweep"] = ls.magnitude
+            lsweep = neoobj.left_sweep
+            attr["left_sweep"] = lsweep.magnitude
+            attr["left_sweep"] = units_to_string(lsweep.units)
         return attr
 
     def _write_property(self, section, name, v):
@@ -1241,20 +1145,11 @@ class NixIO(BaseIO):
         neo_attrs["description"] = stringify(nix_obj.definition)
         if nix_obj.metadata:
             for prop in nix_obj.metadata.props:
-                if (prop.name.endswith(".scaling") or
-                        prop.name.endswith(".dim")):
-                    # Skipping. Not a neo attribute. Used for scaling units.
-                    continue
                 values = prop.values
                 values = list(v.value for v in values)
                 if prop.unit:
-                    usname = "{}.scaling".format(prop)
                     units = prop.unit
-                    if usname in nix_obj.metadata:
-                        scaling = nix_obj.metadata[usname]
-                        units = pq.CompoundUnit("{} * {}".format(scaling,
-                                                                 units))
-                    values = pq.Quantity(values, units)
+                    values = create_quantity(values, units)
                 if len(values) == 1:
                     neo_attrs[prop.name] = values[0]
                 else:
