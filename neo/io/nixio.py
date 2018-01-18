@@ -507,13 +507,10 @@ class NixIO(BaseIO):
 
     def _write_object(self, obj, loc=""):
         objtype = type(obj).__name__.lower()
-        if isinstance(obj, Block):
-            containerstr = "/"
+        if objtype == "channelindex":
+            containerstr = "/channel_indexes/"
         else:
-            if objtype == "channelindex":
-                containerstr = "/channel_indexes/"
-            else:
-                containerstr = "/" + type(obj).__name__.lower() + "s/"
+            containerstr = "/" + type(obj).__name__.lower() + "s/"
         if "nix_name" in obj.annotations:
             nix_name = obj.annotations["nix_name"]
         else:
@@ -662,7 +659,25 @@ class NixIO(BaseIO):
         :param bl: Neo block to be written
         :param loc: Unused for blocks
         """
-        self._write_object(bl, loc)
+        containerstr = "/"
+        if "nix_name" in bl.annotations:
+            nix_name = bl.annotations["nix_name"]
+        else:
+            nix_name = "neo.block.{}".format(self._generate_nix_name())
+            bl.annotate(nix_name=nix_name)
+        objpath = loc + containerstr + nix_name
+        attr = self._neo_attr_to_nix(bl)
+        attr["name"] = nix_name
+        if nix_name in self.nix_file.blocks:
+            nixobj = self.nix_file[nix_name]
+        else:
+            nixobj = self.nix_file.create_block(attr["name"], "neo.block")
+            nixobj.metadata = self.nix_file.create_section(
+                attr["name"], "neo.block.metadata"
+            )
+
+        self._write_attr_annotations(nixobj, attr, objpath)
+        self._link_nix_obj(nixobj, loc, containerstr)
         self._create_references(bl)
 
     def write_channelindex(self, chx, loc=""):
