@@ -29,7 +29,7 @@ import quantities as pq
 from neo.core import (Block, Segment, ChannelIndex, AnalogSignal,
                       IrregularlySampledSignal, Unit, SpikeTrain, Event, Epoch)
 from neo.test.iotest.common_io_test import BaseTestIO
-from neo.io.nixio import NixIO, string_types
+from neo.io.nixio import NixIO, string_types, create_quantity, units_to_string
 
 try:
     import nixio as nix
@@ -185,27 +185,23 @@ class NixIOTest(unittest.TestCase):
         for sig, da in zip(np.transpose(neosig),
                            sorted(nixdalist, key=lambda d: d.name)):
             self.compare_attr(neosig, da)
-            daquant = pq.Quantity(da[:], da.unit)
+            daquant = create_quantity(da[:], pq.CompoundUnit(da.unit))
             np.testing.assert_almost_equal(sig, daquant)
-            coeff = da.polynom_coefficients
-            nixunit = da.unit
-            if coeff:
-                nixunit = pq.CompoundUnit("{} * {}".format(coeff[1], nixunit))
-            else:
-                nixunit = pq.Quantity(1, nixunit)
+            nixunit = create_quantity(1, da.unit)
             self.assertEqual(neounit, nixunit)
             timedim = da.dimensions[0]
             if isinstance(neosig, AnalogSignal):
                 self.assertEqual(timedim.dimension_type,
                                  nix.DimensionType.Sample)
                 neosp = neosig.sampling_period
-                nixsp = pq.Quantity(timedim.sampling_interval, timedim.unit)
+                nixsp = create_quantity(timedim.sampling_interval,
+                                        timedim.unit)
                 self.assertEqual(neosp, nixsp)
                 tsunit = timedim.unit
                 if "t_start.units" in da.metadata.props:
                     tsunit = da.metadata["t_start.units"]
                 neots = neosig.t_start
-                nixts = pq.Quantity(timedim.offset, tsunit)
+                nixts = create_quantity(timedim.offset, tsunit)
                 self.assertEqual(neots, nixts)
             elif isinstance(neosig, IrregularlySampledSignal):
                 self.assertEqual(timedim.dimension_type,
@@ -213,7 +209,7 @@ class NixIOTest(unittest.TestCase):
                 np.testing.assert_almost_equal(neosig.times.magnitude,
                                                timedim.ticks)
                 self.assertEqual(timedim.unit,
-                                 str(neosig.times.dimensionality))
+                                 units_to_string(neosig.times.units))
 
     def compare_eests_mtags(self, eestlist, mtaglist):
         self.assertEqual(len(eestlist), len(mtaglist))
@@ -232,9 +228,9 @@ class NixIOTest(unittest.TestCase):
         self.assertEqual(mtag.type, "neo.epoch")
         self.compare_attr(epoch, mtag)
         pos = mtag.positions
-        posquant = pq.Quantity(pos[:], pos.unit)
+        posquant = create_quantity(pos[:], pos.unit)
         ext = mtag.extents
-        extquant = pq.Quantity(ext[:], ext.unit)
+        extquant = create_quantity(ext[:], ext.unit)
         np.testing.assert_almost_equal(epoch.as_quantity(), posquant)
         np.testing.assert_almost_equal(epoch.durations, extquant)
         for neol, nixl in zip(epoch.labels,
@@ -250,7 +246,7 @@ class NixIOTest(unittest.TestCase):
         self.assertEqual(mtag.type, "neo.event")
         self.compare_attr(event, mtag)
         pos = mtag.positions
-        posquant = pq.Quantity(pos[:], pos.unit)
+        posquant = create_quantity(pos[:], pos.unit)
         np.testing.assert_almost_equal(event.as_quantity(), posquant)
         for neol, nixl in zip(event.labels,
                               mtag.positions.dimensions[0].labels):
@@ -266,7 +262,7 @@ class NixIOTest(unittest.TestCase):
         self.assertEqual(mtag.type, "neo.spiketrain")
         self.compare_attr(spiketrain, mtag)
         pos = mtag.positions
-        posquant = pq.Quantity(pos[:], pos.unit)
+        posquant = create_quantity(pos[:], pos.unit)
         np.testing.assert_almost_equal(spiketrain.as_quantity(), posquant)
         if len(mtag.features):
             neowfs = spiketrain.waveforms
@@ -275,7 +271,8 @@ class NixIOTest(unittest.TestCase):
             for nixwf, neowf in zip(nixwfs, neowfs):
                 for nixrow, neorow in zip(nixwf, neowf):
                     for nixv, neov in zip(nixrow, neorow):
-                        self.assertEqual(pq.Quantity(nixv, nixwfs.unit), neov)
+                        self.assertEqual(create_quantity(nixv, nixwfs.unit),
+                                         neov)
             self.assertEqual(nixwfs.dimensions[0].dimension_type,
                              nix.DimensionType.Set)
             self.assertEqual(nixwfs.dimensions[1].dimension_type,
@@ -284,6 +281,8 @@ class NixIOTest(unittest.TestCase):
                              nix.DimensionType.Sample)
 
     def compare_attr(self, neoobj, nixobj):
+        print(neoobj.annotations["nix_name"])
+        print(nixobj.name)
         if isinstance(neoobj, (AnalogSignal, IrregularlySampledSignal)):
             nix_name = ".".join(nixobj.name.split(".")[:-1])
         else:
@@ -303,18 +302,11 @@ class NixIOTest(unittest.TestCase):
                 if k == "nix_name":
                     continue
                 if isinstance(v, pq.Quantity):
-                    kscaling = "{}.scaling".format(k)
-                    scaling = 1.0
                     nixunit = nixmd.props[str(k)].unit
-                    if kscaling in nixmd:
-                        scaling = nixmd[kscaling]
-                        nixunit = pq.CompoundUnit("{} * {}".format(
-                            scaling, nixunit
-                        ))
-                    self.assertEqual(nixunit, str(v.dimensionality))
+                    self.assertEqual(nixunit, units_to_string(v.units))
                     nixvalue = nixmd[str(k)]
                     if isinstance(nixvalue, Iterable):
-                        nixvalue = scaling * np.array(nixvalue)
+                        nixvalue = np.array(nixvalue)
                     np.testing.assert_almost_equal(nixvalue, v.magnitude)
                 else:
                     self.assertEqual(nixmd[str(k)], v,
@@ -657,7 +649,7 @@ class NixIOWriteTest(NixIOTest):
 
     def write_and_compare(self, blocks):
         self.writer.write_all_blocks(blocks)
-        # self.compare_blocks(blocks, self.reader.blocks)
+        self.compare_blocks(blocks, self.reader.blocks)
         self.compare_blocks(self.writer.read_all_blocks(), self.reader.blocks)
         self.compare_blocks(blocks, self.reader.blocks)
 
