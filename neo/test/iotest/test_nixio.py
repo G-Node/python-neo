@@ -1418,8 +1418,8 @@ class NixIOWriteTest(NixIOTest):
             seg.events.append(event)
 
             # add channel index and unit
-            channel = ChannelIndex([0], channel_names=['mychannelname'], channel_ids=[4],
-                                   name=['testname'])
+            channel = ChannelIndex([0], channel_names=['mychannelname'],
+                                   channel_ids=[4], name='test_channel')
             block.channel_indexes.append(channel)
             unit = Unit(name='myunit', description='blablabla', file_origin='fileA.nix',
                         myannotation='myannotation')
@@ -1434,15 +1434,20 @@ class NixIOWriteTest(NixIOTest):
         block = generate_complete_block()
 
         basename, ext = os.path.splitext(self.filename)
-        filename2 = basename + '-2.' + ext
+        filename2 = basename + '-2' + ext
 
         # writing block to file 1
         with NixIO(filename2, 'ow') as io:
             io.write_block(block)
+        chx = block.channel_indexes[0]
+        chx_nix_name_w = chx.annotations["nix_name"]
 
+        nixfile = nix.File(filename2, mode=nix.FileMode.ReadOnly)
         # reading data as lazy objects from file 1
         with NixIO_lazy(filename2) as io:
             block_lazy = io.read_block(lazy=True)
+
+            self.compare_blocks([block_lazy], nixfile.blocks)
 
             self.write_and_compare([block_lazy])
 

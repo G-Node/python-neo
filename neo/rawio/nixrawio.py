@@ -67,10 +67,19 @@ class NIXRawIO(BaseRawIO):
                                 # use only for different signal length
                         gain = 1
                         offset = 0.
-                        sig_channels.append((ch_name, chan_id, sr, dtype,
-                                            units, gain, offset, group_id))
-                break
-            break
+                # break
+            # break
+            for srcidx, src in enumerate(bl.sources):
+                ch_name = src.metadata["neo_name"]
+                chan_id = srcidx
+                sr = 0
+                dtype = ""
+                units = ""
+                gain = 1
+                offset = 0.
+                group_id = 0
+                sig_channels.append((ch_name, chan_id, sr, dtype,
+                                     units, gain, offset, group_id))
         sig_channels = np.array(sig_channels, dtype=_signal_channel_dtype)
 
         unit_channels = []
